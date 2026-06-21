@@ -860,7 +860,7 @@
     const STORAGE_KEY = 'enterpriseAttendanceSession';
     const API_URL_KEY = 'enterpriseAttendanceApiUrl';
     const PAGE_SIZE = 10;
-    const SHIFT_OPTIONS = ['A', 'B', 'C', 'A+B', 'A+C', 'B+C', 'A+B+C'];
+    const SHIFT_OPTIONS = ['A', 'B', 'C', 'A+B', 'A+C', 'B+C', 'C+A', 'A+B+C', 'B+C+A', 'C+A+B'];
 
     const state = {
       session: null,
@@ -1292,7 +1292,7 @@
       showLoading(true);
       try {
         const result = await api('saveEmployee', { token: state.session.token, employee });
-        state.employees = result.employees || state.employees;
+        if (result.user) upsertEmployee(result.user);
         closeModal();
         toast(result.message || 'User saved.');
         renderDashboard();
@@ -1311,7 +1311,7 @@
       showLoading(true);
       try {
         const result = await api('setEmployeeActive', { token: state.session.token, userId, active });
-        state.employees = result.employees || state.employees;
+        if (result.user) upsertEmployee(result.user);
         toast(result.message || 'Status updated.');
         renderDashboard();
         renderEmployees();
@@ -1377,7 +1377,7 @@
       showLoading(true);
       try {
         const result = await api('updateAttendanceStatus', { token: state.session.token, rowNumber, status, remarks });
-        state.attendance = result.attendance || state.attendance;
+        if (result.record) upsertAttendance(result.record);
         toast(result.message || 'Attendance updated.');
         closeModal();
         renderDashboard();
@@ -1412,16 +1412,29 @@
       }
     }
 
-    async function logout() {
-      try {
-        if (state.session && state.session.token) {
-          await api('logout', { token: state.session.token });
-        }
-      } catch (error) {
-        // Logout should still clear the local session even if the server call fails.
-      }
+    function logout() {
+      const token = state.session && state.session.token;
       localStorage.removeItem(STORAGE_KEY);
-      redirectToLogin();
+      if (token) fireAndForgetApi('logout', { token });
+      window.setTimeout(redirectToLogin, 80);
+    }
+
+    function upsertEmployee(user) {
+      const index = state.employees.findIndex((item) => item.UserID === user.UserID);
+      if (index === -1) {
+        state.employees.push(user);
+      } else {
+        state.employees[index] = user;
+      }
+    }
+
+    function upsertAttendance(record) {
+      const index = state.attendance.findIndex((item) => Number(item._rowNumber) === Number(record._rowNumber));
+      if (index === -1) {
+        state.attendance.unshift(record);
+      } else {
+        state.attendance[index] = record;
+      }
     }
 
     function filteredEmployees() {
@@ -1706,6 +1719,32 @@
 
     function getApiUrl() {
       return localStorage.getItem(API_URL_KEY) || APP_CONFIG.apiUrl;
+    }
+
+    function fireAndForgetApi(action, payload) {
+      const apiUrl = getApiUrl();
+      if (!apiUrl || apiUrl.indexOf('PASTE_YOUR') === 0) return;
+
+      const callbackName = 'attendanceCallback_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+      const script = document.createElement('script');
+      const cleanup = () => {
+        delete window[callbackName];
+        script.remove();
+      };
+      window[callbackName] = cleanup;
+      window.setTimeout(cleanup, 5000);
+
+      try {
+        const url = new URL(apiUrl);
+        url.searchParams.set('action', action);
+        url.searchParams.set('payload', JSON.stringify(payload || {}));
+        url.searchParams.set('callback', callbackName);
+        script.src = url.toString();
+        script.onerror = cleanup;
+        document.body.appendChild(script);
+      } catch (error) {
+        cleanup();
+      }
     }
 
     function captureApiUrlFromQuery() {

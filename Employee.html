@@ -654,7 +654,15 @@
         const result = await api('submitAttendance', { token: state.session.token, attendance });
         toast(result.message || 'Attendance submitted.');
         document.getElementById('comments').value = '';
-        await loadEmployeeData();
+        if (result.record) {
+          state.attendance.unshift(result.record);
+          state.page = 1;
+          renderSummary();
+          renderShiftOptions();
+          renderHistory();
+        } else {
+          await loadEmployeeData();
+        }
       } catch (error) {
         handleApiError(error);
       } finally {
@@ -764,16 +772,11 @@
       }
     }
 
-    async function logout() {
-      try {
-        if (state.session && state.session.token) {
-          await api('logout', { token: state.session.token });
-        }
-      } catch (error) {
-        // Local logout still proceeds.
-      }
+    function logout() {
+      const token = state.session && state.session.token;
       localStorage.removeItem(STORAGE_KEY);
-      redirectToLogin();
+      if (token) fireAndForgetApi('logout', { token });
+      window.setTimeout(redirectToLogin, 80);
     }
 
     function statusBadge(status) {
@@ -878,6 +881,32 @@
 
     function getApiUrl() {
       return localStorage.getItem(API_URL_KEY) || APP_CONFIG.apiUrl;
+    }
+
+    function fireAndForgetApi(action, payload) {
+      const apiUrl = getApiUrl();
+      if (!apiUrl || apiUrl.indexOf('PASTE_YOUR') === 0) return;
+
+      const callbackName = 'attendanceCallback_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+      const script = document.createElement('script');
+      const cleanup = () => {
+        delete window[callbackName];
+        script.remove();
+      };
+      window[callbackName] = cleanup;
+      window.setTimeout(cleanup, 5000);
+
+      try {
+        const url = new URL(apiUrl);
+        url.searchParams.set('action', action);
+        url.searchParams.set('payload', JSON.stringify(payload || {}));
+        url.searchParams.set('callback', callbackName);
+        script.src = url.toString();
+        script.onerror = cleanup;
+        document.body.appendChild(script);
+      } catch (error) {
+        cleanup();
+      }
     }
 
     function captureApiUrlFromQuery() {

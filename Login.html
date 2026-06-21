@@ -315,13 +315,8 @@
     function boot() {
       captureApiUrlFromQuery();
       const session = getSession();
-      if (session && session.token && Date.now() < Number(session.expiresAtMs || 0)) {
-        api('validateSession', { token: session.token })
-          .then((result) => {
-            saveSession(result);
-            redirectForRole(result.user.Role);
-          })
-          .catch(() => clearSession());
+      if (session && session.token && session.user && Date.now() < Number(session.expiresAtMs || 0)) {
+        redirectForRole(session.user.Role);
       }
     }
 
