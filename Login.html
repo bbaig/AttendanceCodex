@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enterprise Attendance Login</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --text: #172033;
+      --muted: #667085;
+      --line: #d9e2ef;
+      --primary: #1261a6;
+      --primary-dark: #0d477b;
+      --danger: #b42318;
+      --success: #047857;
+      --shadow: 0 20px 45px rgba(16, 24, 40, 0.14);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+      background:
+        linear-gradient(135deg, rgba(18, 97, 166, 0.11), rgba(4, 120, 87, 0.08)),
+        var(--bg);
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .login-shell {
+      width: min(980px, 100%);
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .brand-panel {
+      min-height: 620px;
+      padding: 56px;
+      background:
+        linear-gradient(145deg, rgba(18, 97, 166, 0.92), rgba(13, 71, 123, 0.94)),
+        #1261a6;
+      color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .brand-mark {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, 0.38);
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      font-size: clamp(32px, 5vw, 52px);
+      line-height: 1.03;
+      letter-spacing: 0;
+      margin: 32px 0 18px;
+    }
+
+    .brand-panel p {
+      max-width: 460px;
+      color: rgba(255, 255, 255, 0.82);
+      font-size: 17px;
+      line-height: 1.65;
+      margin: 0;
+    }
+
+    .brand-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 34px;
+    }
+
+    .brand-stat {
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 8px;
+      padding: 16px;
+      min-height: 96px;
+    }
+
+    .brand-stat strong {
+      display: block;
+      font-size: 22px;
+      margin-bottom: 8px;
+    }
+
+    .brand-stat span {
+      color: rgba(255, 255, 255, 0.75);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .form-panel {
+      padding: 56px 48px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 12px;
+      color: var(--primary);
+      font-weight: 700;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 28px;
+      letter-spacing: 0;
+    }
+
+    .help-text {
+      margin: 0 0 28px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      color: #344054;
+      font-weight: 700;
+      margin: 0 0 8px;
+    }
+
+    input {
+      width: 100%;
+      height: 46px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 14px;
+      color: var(--text);
+      font: inherit;
+      background: #ffffff;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 4px rgba(18, 97, 166, 0.13);
+    }
+
+    .field {
+      margin-bottom: 18px;
+    }
+
+    .message {
+      display: none;
+      margin: 0 0 18px;
+      padding: 12px 14px;
+      border-radius: 6px;
+      font-size: 14px;
+      line-height: 1.45;
+      border: 1px solid transparent;
+    }
+
+    .message.error {
+      display: block;
+      color: var(--danger);
+      background: #fff3f0;
+      border-color: #ffd6cc;
+    }
+
+    .message.success {
+      display: block;
+      color: var(--success);
+      background: #ecfdf3;
+      border-color: #abefc6;
+    }
+
+    button {
+      width: 100%;
+      height: 48px;
+      border: 0;
+      border-radius: 6px;
+      background: var(--primary);
+      color: #ffffff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.2s;
+    }
+
+    button:hover {
+      background: var(--primary-dark);
+    }
+
+    button:disabled {
+      opacity: 0.65;
+      cursor: wait;
+    }
+
+    .footer-note {
+      margin-top: 22px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    @media (max-width: 820px) {
+      body {
+        padding: 0;
+        display: block;
+      }
+
+      .login-shell {
+        min-height: 100vh;
+        grid-template-columns: 1fr;
+        border-radius: 0;
+        border: 0;
+      }
+
+      .brand-panel {
+        min-height: auto;
+        padding: 34px 24px;
+      }
+
+      .brand-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .form-panel {
+        padding: 34px 24px 42px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="login-shell">
+    <section class="brand-panel" aria-label="Application overview">
+      <div>
+        <div class="brand-mark">EA</div>
+        <h1>Enterprise Attendance</h1>
+        <p>Declare worked shifts, route attendance for approval, and keep every action visible through a secure audit trail.</p>
+        <div class="brand-grid">
+          <div class="brand-stat">
+            <strong>A B C</strong>
+            <span>Authorized shift declaration</span>
+          </div>
+          <div class="brand-stat">
+            <strong>RBAC</strong>
+            <span>Admin and employee access</span>
+          </div>
+          <div class="brand-stat">
+            <strong>Sheets</strong>
+            <span>Google Sheets as database</span>
+          </div>
+        </div>
+      </div>
+      <p>Use your assigned User ID and password or PIN to continue.</p>
+    </section>
+
+    <section class="form-panel">
+      <p class="eyebrow">Secure login</p>
+      <h2>Sign in</h2>
+      <p class="help-text">Admins open the console. Employees open their attendance dashboard.</p>
+
+      <div id="message" class="message" role="alert"></div>
+
+      <form id="loginForm" autocomplete="on">
+        <div class="field">
+          <label for="userId">User ID</label>
+          <input id="userId" name="userId" autocomplete="username" required>
+        </div>
+        <div class="field">
+          <label for="password">Password / PIN</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button id="loginButton" type="submit">Sign in</button>
+      </form>
+
+      <p class="footer-note">Default first login after setup: user ID <strong>admin</strong>, password <strong>admin123</strong>. Change it immediately from the Admin Console.</p>
+    </section>
+  </main>
+
+  <script>
+    const APP_CONFIG = {
+      apiUrl: 'https://script.google.com/macros/s/AKfycbwDecJui577UcCT--ohfHGpwC4HLCUMzY3Q53tcyfhhWavTrdvHhVFdERsfBptU5ITQ/exec',
+      sessionTimeoutMinutes: 30
+    };
+
+    const STORAGE_KEY = 'enterpriseAttendanceSession';
+    const API_URL_KEY = 'enterpriseAttendanceApiUrl';
+
+    const messageEl = document.getElementById('message');
+    const loginForm = document.getElementById('loginForm');
+    const loginButton = document.getElementById('loginButton');
+
+    boot();
+
+    function boot() {
+      captureApiUrlFromQuery();
+      const session = getSession();
+      if (session && session.token && Date.now() < Number(session.expiresAtMs || 0)) {
+        api('validateSession', { token: session.token })
+          .then((result) => {
+            saveSession(result);
+            redirectForRole(result.user.Role);
+          })
+          .catch(() => clearSession());
+      }
+    }
+
+    loginForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      setMessage('', '');
+      loginButton.disabled = true;
+      loginButton.textContent = 'Signing in...';
+
+      try {
+        const result = await api('login', {
+          userId: document.getElementById('userId').value.trim(),
+          password: document.getElementById('password').value
+        });
+        saveSession(result);
+        setMessage('Login successful. Redirecting...', 'success');
+        redirectForRole(result.user.Role);
+      } catch (error) {
+        setMessage(error.message || 'Unable to sign in.', 'error');
+      } finally {
+        loginButton.disabled = false;
+        loginButton.textContent = 'Sign in';
+      }
+    });
+
+    function redirectForRole(role) {
+      const target = role === 'Admin' ? 'Admin.html' : 'Employee.html';
+      window.location.href = target;
+    }
+
+    function saveSession(data) {
+      const expiresAtMs = Date.now() + APP_CONFIG.sessionTimeoutMinutes * 60 * 1000;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        token: data.token,
+        user: data.user,
+        expiresAt: data.expiresAt,
+        expiresAtMs,
+        lastActivityMs: Date.now()
+      }));
+    }
+
+    function getSession() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function clearSession() {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+
+    function setMessage(text, type) {
+      messageEl.textContent = text;
+      messageEl.className = type ? 'message ' + type : 'message';
+    }
+
+    function getApiUrl() {
+      return localStorage.getItem(API_URL_KEY) || APP_CONFIG.apiUrl;
+    }
+
+    function captureApiUrlFromQuery() {
+      const params = new URLSearchParams(window.location.search);
+      const apiUrl = params.get('apiUrl');
+      if (apiUrl) {
+        localStorage.setItem(API_URL_KEY, apiUrl);
+        params.delete('apiUrl');
+        const cleanUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+    }
+
+    async function api(action, payload) {
+      const apiUrl = getApiUrl();
+      if (!apiUrl || apiUrl.indexOf('PASTE_YOUR') === 0) {
+        throw new Error('Configure the Google Apps Script Web App URL in this page before signing in.');
+      }
+
+      return jsonp(apiUrl, action, payload);
+    }
+
+    function jsonp(apiUrl, action, payload) {
+      return new Promise((resolve, reject) => {
+        const callbackName = 'attendanceCallback_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+        const script = document.createElement('script');
+        const timeout = window.setTimeout(() => {
+          cleanup();
+          reject(new Error('The attendance service did not respond.'));
+        }, 20000);
+
+        window[callbackName] = (json) => {
+          cleanup();
+          if (!json.ok) {
+            reject(new Error(json.error || 'Request failed.'));
+            return;
+          }
+          resolve(json.data);
+        };
+
+        function cleanup() {
+          window.clearTimeout(timeout);
+          delete window[callbackName];
+          script.remove();
+        }
+
+        const url = new URL(apiUrl);
+        url.searchParams.set('action', action);
+        url.searchParams.set('payload', JSON.stringify(payload || {}));
+        url.searchParams.set('callback', callbackName);
+        script.src = url.toString();
+        script.onerror = () => {
+          cleanup();
+          reject(new Error('Unable to reach the attendance service.'));
+        };
+        document.body.appendChild(script);
+      });
+    }
+  </script>
+</body>
+</html>
