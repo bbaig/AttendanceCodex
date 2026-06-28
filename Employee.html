@@ -546,35 +546,42 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
   // =========================
   const user = JSON.parse(localStorage.getItem("user"));
 
-  if (!user) {
-    window.location.href = "Login.html";
-  }
+const user = JSON.parse(localStorage.getItem("user") || "null");
+
+function safeRedirectToLogin() {
+  localStorage.removeItem("user"); // IMPORTANT: clears broken loop
+  window.location.replace("Login.html"); // replace avoids back loop
+}
+
+if (!user || !user.employee_id) {
+  safeRedirectToLogin();
+}
 
   // =========================
   // 3. LOAD PROFILE IMMEDIATELY (FIX FOR "LOADING PROFILE")
   // =========================
-  async function loadProfile() {
-    try {
-      document.getElementById("empName").innerText = user.name || user.employee_id;
-      document.getElementById("empId").innerText = user.employee_id;
+ async function loadProfile() {
+  try {
+    if (!user?.employee_id) return;
 
-      // OPTIONAL: if you have employee table refresh
-      const { data, error } = await supabaseClient
-        .from("employees")
-        .select("*")
-        .eq("employee_id", user.employee_id)
-        .single();
+    const { data, error } = await supabaseClient
+      .from("employees")
+      .select("*")
+      .eq("employee_id", user.employee_id)
+      .single();
 
-      if (!error && data) {
-        document.getElementById("empName").innerText = data.name;
-      }
-
-      document.getElementById("profileStatus").innerText = "Active";
-
-    } catch (err) {
-      console.log("Profile load error:", err);
+    if (error) {
+      console.log("Profile error:", error);
+      return;
     }
+
+    document.getElementById("empName").innerText = data.name;
+    document.getElementById("empId").innerText = data.employee_id;
+
+  } catch (e) {
+    console.log("Crash prevented:", e);
   }
+}
 
   // =========================
   // 4. LOAD ATTENDANCE HISTORY

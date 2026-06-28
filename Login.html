@@ -388,7 +388,13 @@ const result={
       messageEl.className = type ? 'message ' + type : 'message';
     }
 
-    
+    // AFTER LOGIN SUCCESS ONLY
+localStorage.setItem("user", JSON.stringify(data));
+
+// IMPORTANT: add small delay (prevents loop)
+setTimeout(() => {
+  window.location.href = "Employee.html";
+}, 300);
 
     
 
