@@ -529,443 +529,418 @@
       </section>
     </main>
   </div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase.js"></script>
 
-  <script>
-    const APP_CONFIG = {
-      apiUrl: 'https://script.google.com/macros/s/AKfycbwDecJui577UcCT--ohfHGpwC4HLCUMzY3Q53tcyfhhWavTrdvHhVFdERsfBptU5ITQ/exec',
-      sessionTimeoutMinutes: 30
-    };
+<script>
+const APP_CONFIG = {
+  sessionTimeoutMinutes: 30
+};
 
-    const STORAGE_KEY = 'enterpriseAttendanceSession';
-    const API_URL_KEY = 'enterpriseAttendanceApiUrl';
-    const PAGE_SIZE = 10;
+const STORAGE_KEY = "attendance_session_v1";
+const PAGE_SIZE = 10;
 
-    const state = {
-      session: null,
-      attendance: [],
-      authorizedShifts: [],
-      page: 1
-    };
+const state = {
+  session: null,
+  attendance: [],
+  authorizedShifts: [],
+  page: 1
+};
 
-    captureApiUrlFromQuery();
-    boot();
+captureApiUrlFromQuery();
+boot();
 
-    async function boot() {
-      state.session = getSession();
-      if (!state.session || !state.session.token || state.session.user.Role !== 'Employee') {
-        redirectToLogin();
-        return;
-      }
+/* -----------------------------
+   BOOT
+------------------------------*/
+async function boot() {
+  if (!window.supabase) {
+    toast("Supabase not initialized");
+    return;
+  }
 
-      bindEvents();
-      setToday();
-      await loadEmployeeData();
-      window.setInterval(checkSessionTimeout, 30000);
-    }
+  const { data } = await supabase.auth.getUser();
+  const user = data?.user;
 
-    function bindEvents() {
-      document.getElementById('logoutButton').addEventListener('click', logout);
-      document.getElementById('attendanceForm').addEventListener('submit', submitAttendance);
-      document.getElementById('clearFilters').addEventListener('click', clearFilters);
-      document.body.addEventListener('click', (event) => {
-        const button = event.target.closest('button');
-        if (!button) return;
-        if (button.dataset.export) exportRows(button.dataset.export);
-        if (button.dataset.page) {
-          state.page = Number(button.dataset.page);
-          renderHistory();
-        }
-      });
-      ['searchFilter', 'shiftFilter', 'statusFilter', 'fromFilter', 'toFilter'].forEach((id) => {
-        document.getElementById(id).addEventListener('input', () => {
-          state.page = 1;
-          renderHistory();
-        });
-      });
-      ['click', 'keydown', 'mousemove', 'touchstart'].forEach((eventName) => {
-        document.addEventListener(eventName, touchSession, { passive: true });
-      });
-    }
+  if (!user) {
+    redirectToLogin();
+    return;
+  }
 
-    async function loadEmployeeData() {
-      showLoading(true);
-      try {
-        const data = await api('getEmployeeBootstrap', { token: state.session.token });
-        refreshSession(data.session);
-        state.attendance = data.attendance || [];
-        state.authorizedShifts = data.authorizedShifts || [];
-        renderProfile();
-        renderSummary();
-        renderShiftOptions();
-        renderHistory();
-      } catch (error) {
-        handleApiError(error);
-      } finally {
-        showLoading(false);
-      }
-    }
+  state.session = {
+    user: normalizeUser(user)
+  };
 
-    function renderProfile() {
-      const user = state.session.user;
-      document.getElementById('employeeName').textContent = user.Name;
-      document.getElementById('employeeMeta').textContent = `${user.UserID} - ${user.Department || 'No department'} - ${user.Designation || 'No designation'}`;
-    }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.session));
 
-    function renderSummary() {
-      const cards = [
-        ['Total Submissions', state.attendance.length],
-        ['Pending Requests', state.attendance.filter((row) => row.Status === 'Pending').length],
-        ['Approved Requests', state.attendance.filter((row) => row.Status === 'Approved').length],
-        ['Rejected Requests', state.attendance.filter((row) => row.Status === 'Rejected').length]
-      ];
-      document.getElementById('summaryCards').innerHTML = cards.map(([label, value]) => `
-        <div class="card"><span>${escapeHtml(label)}</span><strong>${value}</strong></div>
-      `).join('');
-    }
+  bindEvents();
+  setToday();
+  await loadEmployeeData();
 
-    function renderShiftOptions() {
-      const shiftSelect = document.getElementById('shiftWorked');
-      const filterSelect = document.getElementById('shiftFilter');
-      const options = state.authorizedShifts.map((shift) => `<option>${escapeHtml(shift)}</option>`).join('');
+  setInterval(checkSessionTimeout, 30000);
+}
 
-      shiftSelect.innerHTML = options || '<option value="">No authorized shifts</option>';
-      shiftSelect.disabled = !state.authorizedShifts.length;
-      document.getElementById('submitButton').disabled = !state.authorizedShifts.length;
+/* -----------------------------
+   USER NORMALIZATION
+------------------------------*/
+function normalizeUser(user) {
+  return {
+    id: user.id,
+    name: user.email,
+    email: user.email
+  };
+}
 
-      const historyShifts = uniqueValues(state.attendance.map((row) => row.ShiftWorked));
-      filterSelect.innerHTML = '<option value="">All shifts</option>' + historyShifts.map((shift) => `<option>${escapeHtml(shift)}</option>`).join('');
-    }
+/* -----------------------------
+   EVENTS
+------------------------------*/
+function bindEvents() {
+  document.getElementById('logoutButton').addEventListener('click', logout);
+  document.getElementById('attendanceForm').addEventListener('submit', submitAttendance);
+  document.getElementById('clearFilters').addEventListener('click', clearFilters);
 
-    async function submitAttendance(event) {
-      event.preventDefault();
-      const attendance = {
-        AttendanceDate: document.getElementById('attendanceDate').value,
-        ShiftWorked: document.getElementById('shiftWorked').value,
-        Comments: document.getElementById('comments').value.trim()
-      };
+  document.body.addEventListener('click', (event) => {
+    const button = event.target.closest('button');
+    if (!button) return;
 
-      if (!attendance.AttendanceDate || !attendance.ShiftWorked) {
-        toast('Date and shift are required.');
-        return;
-      }
+    if (button.dataset.export) exportRows(button.dataset.export);
 
-      showLoading(true);
-      try {
-        const result = await api('submitAttendance', { token: state.session.token, attendance });
-        toast(result.message || 'Attendance submitted.');
-        document.getElementById('comments').value = '';
-        if (result.record) {
-          state.attendance.unshift(result.record);
-          state.page = 1;
-          renderSummary();
-          renderShiftOptions();
-          renderHistory();
-        } else {
-          await loadEmployeeData();
-        }
-      } catch (error) {
-        handleApiError(error);
-      } finally {
-        showLoading(false);
-      }
-    }
-
-    function renderHistory() {
-      const rows = filteredRows();
-      const maxPage = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-      state.page = Math.min(Math.max(1, state.page), maxPage);
-      const pageRows = rows.slice((state.page - 1) * PAGE_SIZE, state.page * PAGE_SIZE);
-
-      document.getElementById('historyTable').innerHTML = `
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Shift Worked</th>
-            <th>Comments</th>
-            <th>Status</th>
-            <th>Submitted Time</th>
-            <th>Admin Remarks</th>
-            <th>Approved By</th>
-            <th>Approved Date</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${pageRows.length ? pageRows.map((row) => `
-            <tr>
-              <td>${escapeHtml(row.AttendanceDate)}</td>
-              <td>${escapeHtml(row.ShiftWorked)}</td>
-              <td>${escapeHtml(row.Comments)}</td>
-              <td>${statusBadge(row.Status)}</td>
-              <td>${escapeHtml(row.Timestamp)}</td>
-              <td>${escapeHtml(row.AdminRemarks)}</td>
-              <td>${escapeHtml(row.ApprovedBy)}</td>
-              <td>${escapeHtml(row.ApprovedDate)}</td>
-            </tr>
-          `).join('') : '<tr><td colspan="8" class="empty">No attendance records found.</td></tr>'}
-        </tbody>
-      `;
-
-      document.getElementById('pagination').innerHTML = `
-        <span>${rows.length} records</span>
-        <button class="secondary-button" data-page="${Math.max(1, state.page - 1)}" ${state.page === 1 ? 'disabled' : ''}>Previous</button>
-        <span>Page ${state.page} of ${maxPage}</span>
-        <button class="secondary-button" data-page="${Math.min(maxPage, state.page + 1)}" ${state.page === maxPage ? 'disabled' : ''}>Next</button>
-      `;
-    }
-
-    function filteredRows() {
-      const query = getValue('searchFilter').toLowerCase();
-      const shift = getValue('shiftFilter');
-      const status = getValue('statusFilter');
-      const from = getValue('fromFilter');
-      const to = getValue('toFilter');
-
-      return state.attendance.filter((row) => {
-        if (query && !Object.values(row).join(' ').toLowerCase().includes(query)) return false;
-        if (shift && row.ShiftWorked !== shift) return false;
-        if (status && row.Status !== status) return false;
-        if (from && row.AttendanceDate < from) return false;
-        if (to && row.AttendanceDate > to) return false;
-        return true;
-      }).sort((a, b) => String(b.AttendanceDate).localeCompare(String(a.AttendanceDate)));
-    }
-
-    function clearFilters() {
-      ['searchFilter', 'shiftFilter', 'statusFilter', 'fromFilter', 'toFilter'].forEach((id) => {
-        document.getElementById(id).value = '';
-      });
-      state.page = 1;
+    if (button.dataset.page) {
+      state.page = Number(button.dataset.page);
       renderHistory();
     }
+  });
 
-    function exportRows(type) {
-      const rows = filteredRows();
-      if (!rows.length) {
-        toast('No rows to export.');
-        return;
-      }
-
-      const cleanRows = rows.map((row) => ({
-        AttendanceDate: row.AttendanceDate,
-        EmployeeID: row.EmployeeID,
-        EmployeeName: row.EmployeeName,
-        Department: row.Department,
-        ShiftWorked: row.ShiftWorked,
-        Comments: row.Comments,
-        Status: row.Status,
-        SubmittedTime: row.Timestamp,
-        AdminRemarks: row.AdminRemarks,
-        ApprovedBy: row.ApprovedBy,
-        ApprovedDate: row.ApprovedDate
-      }));
-      const headers = Object.keys(cleanRows[0]);
-
-      if (type === 'excel') {
-        const html = `
-          <table><thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead>
-          <tbody>${cleanRows.map((row) => `<tr>${headers.map((header) => `<td>${escapeHtml(row[header])}</td>`).join('')}</tr>`).join('')}</tbody></table>
-        `;
-        downloadFile(html, 'my-attendance-history.xls', 'application/vnd.ms-excel');
-      } else {
-        const csv = [headers.join(',')].concat(cleanRows.map((row) => headers.map((header) => csvCell(row[header])).join(','))).join('\n');
-        downloadFile(csv, 'my-attendance-history.csv', 'text/csv;charset=utf-8');
-      }
-    }
-
-    function logout() {
-      const token = state.session && state.session.token;
-      localStorage.removeItem(STORAGE_KEY);
-      if (token) fireAndForgetApi('logout', { token });
-      window.setTimeout(redirectToLogin, 80);
-    }
-
-    function statusBadge(status) {
-      const value = String(status || 'Pending');
-      return `<span class="status ${value.toLowerCase()}">${escapeHtml(value)}</span>`;
-    }
-
-    function setToday() {
-      const today = new Date();
-      const yyyy = today.getFullYear();
-      const mm = String(today.getMonth() + 1).padStart(2, '0');
-      const dd = String(today.getDate()).padStart(2, '0');
-      document.getElementById('attendanceDate').value = `${yyyy}-${mm}-${dd}`;
-    }
-
-    function getValue(id) {
-      return document.getElementById(id).value.trim();
-    }
-
-    function uniqueValues(values) {
-      return Array.from(new Set(values.filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b)));
-    }
-
-    function csvCell(value) {
-      const text = String(value == null ? '' : value);
-      return /[",\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
-    }
-
-    function downloadFile(content, fileName, mimeType) {
-      const blob = new Blob([content], { type: mimeType });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    }
-
-    function escapeHtml(value) {
-      return String(value == null ? '' : value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-    }
-
-    function toast(message) {
-      const el = document.getElementById('toast');
-      el.textContent = message;
-      el.classList.add('show');
-      window.setTimeout(() => el.classList.remove('show'), 3600);
-    }
-
-    function showLoading(show) {
-      document.getElementById('loading').classList.toggle('show', show);
-    }
-
-    function handleApiError(error) {
-      const message = error.message || 'Request failed.';
-      toast(message);
-      if (/session expired|access denied/i.test(message)) {
-        localStorage.removeItem(STORAGE_KEY);
-        window.setTimeout(redirectToLogin, 800);
-      }
-    }
-
-    function refreshSession(serverSession) {
-      state.session.user = serverSession.user || state.session.user;
-      state.session.expiresAt = serverSession.expiresAt || state.session.expiresAt;
-      touchSession();
-    }
-
-    function touchSession() {
-      if (!state.session) return;
-      state.session.lastActivityMs = Date.now();
-      state.session.expiresAtMs = Date.now() + APP_CONFIG.sessionTimeoutMinutes * 60 * 1000;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.session));
-    }
-
-    function checkSessionTimeout() {
-      const session = getSession();
-      if (!session || Date.now() > Number(session.expiresAtMs || 0)) {
-        localStorage.removeItem(STORAGE_KEY);
-        redirectToLogin();
-      }
-    }
-
-    function getSession() {
-      try {
-        return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-      } catch (error) {
-        return null;
-      }
-    }
-
-    function redirectToLogin() {
-      window.location.href = 'Login.html';
-    }
-
-    function getApiUrl() {
-      return localStorage.getItem(API_URL_KEY) || APP_CONFIG.apiUrl;
-    }
-
-    function fireAndForgetApi(action, payload) {
-      const apiUrl = getApiUrl();
-      if (!apiUrl || apiUrl.indexOf('PASTE_YOUR') === 0) return;
-
-      const callbackName = 'attendanceCallback_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
-      const script = document.createElement('script');
-      const cleanup = () => {
-        delete window[callbackName];
-        script.remove();
-      };
-      window[callbackName] = cleanup;
-      window.setTimeout(cleanup, 5000);
-
-      try {
-        const url = new URL(apiUrl);
-        url.searchParams.set('action', action);
-        url.searchParams.set('payload', JSON.stringify(payload || {}));
-        url.searchParams.set('callback', callbackName);
-        script.src = url.toString();
-        script.onerror = cleanup;
-        document.body.appendChild(script);
-      } catch (error) {
-        cleanup();
-      }
-    }
-
-    function captureApiUrlFromQuery() {
-      const params = new URLSearchParams(window.location.search);
-      const apiUrl = params.get('apiUrl');
-      if (apiUrl) {
-        localStorage.setItem(API_URL_KEY, apiUrl);
-        params.delete('apiUrl');
-        window.history.replaceState({}, document.title, window.location.pathname + (params.toString() ? '?' + params.toString() : ''));
-      }
-    }
-
-    function api(action, payload) {
-      const apiUrl = getApiUrl();
-      if (!apiUrl || apiUrl.indexOf('PASTE_YOUR') === 0) {
-        return Promise.reject(new Error('Configure the Google Apps Script Web App URL in this page.'));
-      }
-      return jsonp(apiUrl, action, payload).then((data) => {
-        touchSession();
-        return data;
+  ['searchFilter', 'shiftFilter', 'statusFilter', 'fromFilter', 'toFilter']
+    .forEach(id => {
+      document.getElementById(id).addEventListener('input', () => {
+        state.page = 1;
+        renderHistory();
       });
-    }
+    });
 
-    function jsonp(apiUrl, action, payload) {
-      return new Promise((resolve, reject) => {
-        const callbackName = 'attendanceCallback_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
-        const script = document.createElement('script');
-        const timeout = window.setTimeout(() => {
-          cleanup();
-          reject(new Error('The attendance service did not respond.'));
-        }, 25000);
+  ['click', 'keydown', 'mousemove', 'touchstart']
+    .forEach(evt => document.addEventListener(evt, touchSession, { passive: true }));
+}
 
-        window[callbackName] = (json) => {
-          cleanup();
-          if (!json.ok) {
-            reject(new Error(json.error || 'Request failed.'));
-            return;
-          }
-          resolve(json.data);
-        };
+/* -----------------------------
+   LOAD DATA
+------------------------------*/
+async function loadEmployeeData() {
+  showLoading(true);
 
-        function cleanup() {
-          window.clearTimeout(timeout);
-          delete window[callbackName];
-          script.remove();
-        }
+  try {
+    const userId = state.session?.user?.id;
+    if (!userId) return redirectToLogin();
 
-        const url = new URL(apiUrl);
-        url.searchParams.set('action', action);
-        url.searchParams.set('payload', JSON.stringify(payload || {}));
-        url.searchParams.set('callback', callbackName);
-        script.src = url.toString();
-        script.onerror = () => {
-          cleanup();
-          reject(new Error('Unable to reach the attendance service.'));
-        };
-        document.body.appendChild(script);
-      });
-    }
-  </script>
-</body>
-</html>
+    const { data: attendance } = await supabase
+      .from('attendance')
+      .select('*')
+      .eq('EmployeeID', userId)
+      .order('AttendanceDate', { ascending: false });
+
+    const { data: shifts } = await supabase
+      .from('employee_shifts')
+      .select('ShiftName')
+      .eq('EmployeeID', userId);
+
+    state.attendance = attendance || [];
+    state.authorizedShifts = (shifts || []).map(s => s.ShiftName);
+
+    renderProfile();
+    renderSummary();
+    renderShiftOptions();
+    renderHistory();
+
+  } catch (err) {
+    handleApiError(err);
+  } finally {
+    showLoading(false);
+  }
+}
+
+/* -----------------------------
+   PROFILE
+------------------------------*/
+function renderProfile() {
+  const user = state.session.user;
+
+  document.getElementById('employeeName').textContent = user.name;
+  document.getElementById('employeeMeta').textContent = user.email;
+}
+
+/* -----------------------------
+   SUMMARY
+------------------------------*/
+function renderSummary() {
+  const cards = [
+    ['Total Submissions', state.attendance.length],
+    ['Pending Requests', state.attendance.filter(r => r.Status === 'Pending').length],
+    ['Approved Requests', state.attendance.filter(r => r.Status === 'Approved').length],
+    ['Rejected Requests', state.attendance.filter(r => r.Status === 'Rejected').length]
+  ];
+
+  document.getElementById('summaryCards').innerHTML =
+    cards.map(([label, value]) =>
+      `<div class="card"><span>${escapeHtml(label)}</span><strong>${value}</strong></div>`
+    ).join('');
+}
+
+/* -----------------------------
+   SHIFT OPTIONS
+------------------------------*/
+function renderShiftOptions() {
+  const shiftSelect = document.getElementById('shiftWorked');
+  const filterSelect = document.getElementById('shiftFilter');
+
+  const options = (state.authorizedShifts || [])
+    .map(s => `<option>${escapeHtml(s)}</option>`)
+    .join('');
+
+  shiftSelect.innerHTML = options || '<option value="">No shifts</option>';
+  shiftSelect.disabled = !state.authorizedShifts.length;
+
+  const uniqueShifts = uniqueValues(state.attendance.map(r => r.ShiftWorked));
+
+  filterSelect.innerHTML =
+    '<option value="">All shifts</option>' +
+    uniqueShifts.map(s => `<option>${escapeHtml(s)}</option>`).join('');
+}
+
+/* -----------------------------
+   SUBMIT ATTENDANCE
+------------------------------*/
+async function submitAttendance(e) {
+  e.preventDefault();
+
+  const payload = {
+    AttendanceDate: document.getElementById('attendanceDate').value,
+    ShiftWorked: document.getElementById('shiftWorked').value,
+    Comments: document.getElementById('comments').value.trim()
+  };
+
+  if (!payload.AttendanceDate || !payload.ShiftWorked) {
+    return toast("Date and shift required");
+  }
+
+  showLoading(true);
+
+  try {
+    const { error } = await supabase.from('attendance').insert([{
+      EmployeeID: state.session.user.id,
+      EmployeeName: state.session.user.name,
+      AttendanceDate: payload.AttendanceDate,
+      ShiftWorked: payload.ShiftWorked,
+      Comments: payload.Comments,
+      Status: 'Pending',
+      Timestamp: new Date().toISOString()
+    }]);
+
+    if (error) throw error;
+
+    toast("Attendance submitted");
+
+    document.getElementById('comments').value = '';
+
+    await loadEmployeeData();
+
+  } catch (err) {
+    handleApiError(err);
+  } finally {
+    showLoading(false);
+  }
+}
+
+/* -----------------------------
+   HISTORY
+------------------------------*/
+function renderHistory() {
+  const rows = filteredRows();
+
+  const maxPage = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  state.page = Math.min(Math.max(1, state.page), maxPage);
+
+  const pageRows = rows.slice((state.page - 1) * PAGE_SIZE, state.page * PAGE_SIZE);
+
+  document.getElementById('historyTable').innerHTML = `
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Shift</th>
+        <th>Comments</th>
+        <th>Status</th>
+        <th>Time</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${pageRows.length ? pageRows.map(r => `
+        <tr>
+          <td>${escapeHtml(r.AttendanceDate)}</td>
+          <td>${escapeHtml(r.ShiftWorked)}</td>
+          <td>${escapeHtml(r.Comments)}</td>
+          <td>${statusBadge(r.Status)}</td>
+          <td>${escapeHtml(r.Timestamp)}</td>
+        </tr>
+      `).join('') : `<tr><td colspan="5" class="empty">No records</td></tr>`}
+    </tbody>
+  `;
+
+  document.getElementById('pagination').innerHTML = `
+    <span>${rows.length} records</span>
+    <button class="secondary-button" data-page="${state.page - 1}" ${state.page === 1 ? 'disabled' : ''}>Prev</button>
+    <span>${state.page} / ${maxPage}</span>
+    <button class="secondary-button" data-page="${state.page + 1}" ${state.page === maxPage ? 'disabled' : ''}>Next</button>
+  `;
+}
+
+/* -----------------------------
+   FILTERS
+------------------------------*/
+function filteredRows() {
+  const q = getValue('searchFilter').toLowerCase();
+  const shift = getValue('shiftFilter');
+  const status = getValue('statusFilter');
+  const from = getValue('fromFilter');
+  const to = getValue('toFilter');
+
+  return (state.attendance || [])
+    .filter(r => {
+      if (q && !Object.values(r || {}).join(' ').toLowerCase().includes(q)) return false;
+      if (shift && r.ShiftWorked !== shift) return false;
+      if (status && r.Status !== status) return false;
+      if (from && r.AttendanceDate < from) return false;
+      if (to && r.AttendanceDate > to) return false;
+      return true;
+    })
+    .sort((a, b) => String(b.AttendanceDate).localeCompare(String(a.AttendanceDate)));
+}
+
+function clearFilters() {
+  ['searchFilter','shiftFilter','statusFilter','fromFilter','toFilter']
+    .forEach(id => document.getElementById(id).value = '');
+
+  state.page = 1;
+  renderHistory();
+}
+
+/* -----------------------------
+   EXPORT
+------------------------------*/
+function exportRows(type) {
+  const rows = filteredRows();
+  if (!rows.length) return toast("No data");
+
+  const headers = Object.keys(rows[0]);
+
+  const csv = [headers.join(',')]
+    .concat(rows.map(r => headers.map(h => csvCell(r[h])).join(',')))
+    .join('\n');
+
+  downloadFile(csv, "attendance.csv", "text/csv");
+}
+
+/* -----------------------------
+   LOGOUT
+------------------------------*/
+async function logout() {
+  try {
+    await supabase.auth.signOut();
+  } catch {}
+
+  localStorage.removeItem(STORAGE_KEY);
+  window.location.href = "Login.html";
+}
+
+/* -----------------------------
+   SESSION
+------------------------------*/
+function touchSession() {
+  if (!state.session) return;
+
+  state.session.lastActivity = Date.now();
+  state.session.expiresAt =
+    Date.now() + APP_CONFIG.sessionTimeoutMinutes * 60000;
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.session));
+}
+
+function checkSessionTimeout() {
+  const session = getSession();
+
+  if (!session || Date.now() > session.expiresAt) {
+    localStorage.removeItem(STORAGE_KEY);
+    redirectToLogin();
+  }
+}
+
+function getSession() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
+
+/* -----------------------------
+   HELPERS
+------------------------------*/
+function getValue(id) {
+  return document.getElementById(id).value.trim();
+}
+
+function uniqueValues(arr) {
+  return [...new Set(arr.filter(Boolean))].sort();
+}
+
+function csvCell(v) {
+  const s = String(v ?? '');
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+}
+
+function downloadFile(content, name, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+
+  URL.revokeObjectURL(url);
+}
+
+function escapeHtml(v) {
+  return String(v ?? '')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+function showLoading(show) {
+  document.getElementById('loading').classList.toggle('show', show);
+}
+
+function statusBadge(s) {
+  const v = (s || 'Pending').toLowerCase();
+  return `<span class="status ${v}">${escapeHtml(s)}</span>`;
+}
+
+function setToday() {
+  const d = new Date();
+  document.getElementById('attendanceDate').value =
+    `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function redirectToLogin() {
+  window.location.href = "Login.html";
+}
+</script>
