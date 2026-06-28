@@ -530,417 +530,66 @@
     </main>
   </div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="supabase.js"></script>
 
 <script>
-const APP_CONFIG = {
-  sessionTimeoutMinutes: 30
-};
+  // =========================
+  // 1. INIT SUPABASE
+  // =========================
+  const SUPABASE_URL = "YOUR_SUPABASE_URL";
+  const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
 
-const STORAGE_KEY = "attendance_session_v1";
-const PAGE_SIZE = 10;
+  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const state = {
-  session: null,
-  attendance: [],
-  authorizedShifts: [],
-  page: 1
-};
+  // =========================
+  // 2. LOGIN FUNCTION
+  // =========================
+  async function loginUser(event) {
+    event.preventDefault();
 
-captureApiUrlFromQuery();
-boot();
+    const employeeId = document.getElementById("employeeId").value;
+    const password = document.getElementById("password").value;
 
-/* -----------------------------
-   BOOT
-------------------------------*/
-async function boot() {
-  if (!window.supabase) {
-    toast("Supabase not initialized");
-    return;
-  }
+    // Fetch user from your custom employees table
+    const { data, error } = await client
+      .from("employees")
+      .select("*")
+      .eq("employee_id", employeeId)
+      .eq("password", password)
+      .single();
 
-  const { data } = await supabase.auth.getUser();
-  const user = data?.user;
-
-  if (!user) {
-    redirectToLogin();
-    return;
-  }
-
-  state.session = {
-    user: normalizeUser(user)
-  };
-
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.session));
-
-  bindEvents();
-  setToday();
-  await loadEmployeeData();
-
-  setInterval(checkSessionTimeout, 30000);
-}
-
-/* -----------------------------
-   USER NORMALIZATION
-------------------------------*/
-function normalizeUser(user) {
-  return {
-    id: user.id,
-    name: user.email,
-    email: user.email
-  };
-}
-
-/* -----------------------------
-   EVENTS
-------------------------------*/
-function bindEvents() {
-  document.getElementById('logoutButton').addEventListener('click', logout);
-  document.getElementById('attendanceForm').addEventListener('submit', submitAttendance);
-  document.getElementById('clearFilters').addEventListener('click', clearFilters);
-
-  document.body.addEventListener('click', (event) => {
-    const button = event.target.closest('button');
-    if (!button) return;
-
-    if (button.dataset.export) exportRows(button.dataset.export);
-
-    if (button.dataset.page) {
-      state.page = Number(button.dataset.page);
-      renderHistory();
+    if (error || !data) {
+      alert("Invalid credentials");
+      console.log(error);
+      return;
     }
-  });
 
-  ['searchFilter', 'shiftFilter', 'statusFilter', 'fromFilter', 'toFilter']
-    .forEach(id => {
-      document.getElementById(id).addEventListener('input', () => {
-        state.page = 1;
-        renderHistory();
-      });
-    });
-
-  ['click', 'keydown', 'mousemove', 'touchstart']
-    .forEach(evt => document.addEventListener(evt, touchSession, { passive: true }));
-}
-
-/* -----------------------------
-   LOAD DATA
-------------------------------*/
-async function loadEmployeeData() {
-  showLoading(true);
-
-  try {
-    const userId = state.session?.user?.id;
-    if (!userId) return redirectToLogin();
-
-    const { data: attendance } = await supabase
-      .from('attendance')
-      .select('*')
-      .eq('EmployeeID', userId)
-      .order('AttendanceDate', { ascending: false });
-
-    const { data: shifts } = await supabase
-      .from('employee_shifts')
-      .select('ShiftName')
-      .eq('EmployeeID', userId);
-
-    state.attendance = attendance || [];
-    state.authorizedShifts = (shifts || []).map(s => s.ShiftName);
-
-    renderProfile();
-    renderSummary();
-    renderShiftOptions();
-    renderHistory();
-
-  } catch (err) {
-    handleApiError(err);
-  } finally {
-    showLoading(false);
+    // =========================
+    // 3. ROLE BASED ROUTING
+    // =========================
+    if (data.role === "admin") {
+      localStorage.setItem("user", JSON.stringify(data));
+      window.location.href = "admin.html";
+    } 
+    else if (data.role === "employee") {
+      localStorage.setItem("user", JSON.stringify(data));
+      window.location.href = "employee.html";
+    } 
+    else {
+      alert("Unknown role");
+    }
   }
-}
 
-/* -----------------------------
-   PROFILE
-------------------------------*/
-function renderProfile() {
-  const user = state.session.user;
+  // Attach login to form if needed
+  document.getElementById("loginForm").addEventListener("submit", loginUser);
 
-  document.getElementById('employeeName').textContent = user.name;
-  document.getElementById('employeeMeta').textContent = user.email;
-}
+  // =========================
+  // 4. AUTO SESSION CHECK (optional but recommended)
+  // =========================
+  window.onload = async function () {
+    const user = JSON.parse(localStorage.getItem("user"));
 
-/* -----------------------------
-   SUMMARY
-------------------------------*/
-function renderSummary() {
-  const cards = [
-    ['Total Submissions', state.attendance.length],
-    ['Pending Requests', state.attendance.filter(r => r.Status === 'Pending').length],
-    ['Approved Requests', state.attendance.filter(r => r.Status === 'Approved').length],
-    ['Rejected Requests', state.attendance.filter(r => r.Status === 'Rejected').length]
-  ];
-
-  document.getElementById('summaryCards').innerHTML =
-    cards.map(([label, value]) =>
-      `<div class="card"><span>${escapeHtml(label)}</span><strong>${value}</strong></div>`
-    ).join('');
-}
-
-/* -----------------------------
-   SHIFT OPTIONS
-------------------------------*/
-function renderShiftOptions() {
-  const shiftSelect = document.getElementById('shiftWorked');
-  const filterSelect = document.getElementById('shiftFilter');
-
-  const options = (state.authorizedShifts || [])
-    .map(s => `<option>${escapeHtml(s)}</option>`)
-    .join('');
-
-  shiftSelect.innerHTML = options || '<option value="">No shifts</option>';
-  shiftSelect.disabled = !state.authorizedShifts.length;
-
-  const uniqueShifts = uniqueValues(state.attendance.map(r => r.ShiftWorked));
-
-  filterSelect.innerHTML =
-    '<option value="">All shifts</option>' +
-    uniqueShifts.map(s => `<option>${escapeHtml(s)}</option>`).join('');
-}
-
-/* -----------------------------
-   SUBMIT ATTENDANCE
-------------------------------*/
-async function submitAttendance(e) {
-  e.preventDefault();
-
-  const payload = {
-    AttendanceDate: document.getElementById('attendanceDate').value,
-    ShiftWorked: document.getElementById('shiftWorked').value,
-    Comments: document.getElementById('comments').value.trim()
+    if (user) {
+      console.log("Already logged in:", user.employee_id);
+    }
   };
-
-  if (!payload.AttendanceDate || !payload.ShiftWorked) {
-    return toast("Date and shift required");
-  }
-
-  showLoading(true);
-
-  try {
-    const { error } = await supabase.from('attendance').insert([{
-      EmployeeID: state.session.user.id,
-      EmployeeName: state.session.user.name,
-      AttendanceDate: payload.AttendanceDate,
-      ShiftWorked: payload.ShiftWorked,
-      Comments: payload.Comments,
-      Status: 'Pending',
-      Timestamp: new Date().toISOString()
-    }]);
-
-    if (error) throw error;
-
-    toast("Attendance submitted");
-
-    document.getElementById('comments').value = '';
-
-    await loadEmployeeData();
-
-  } catch (err) {
-    handleApiError(err);
-  } finally {
-    showLoading(false);
-  }
-}
-
-/* -----------------------------
-   HISTORY
-------------------------------*/
-function renderHistory() {
-  const rows = filteredRows();
-
-  const maxPage = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  state.page = Math.min(Math.max(1, state.page), maxPage);
-
-  const pageRows = rows.slice((state.page - 1) * PAGE_SIZE, state.page * PAGE_SIZE);
-
-  document.getElementById('historyTable').innerHTML = `
-    <thead>
-      <tr>
-        <th>Date</th>
-        <th>Shift</th>
-        <th>Comments</th>
-        <th>Status</th>
-        <th>Time</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${pageRows.length ? pageRows.map(r => `
-        <tr>
-          <td>${escapeHtml(r.AttendanceDate)}</td>
-          <td>${escapeHtml(r.ShiftWorked)}</td>
-          <td>${escapeHtml(r.Comments)}</td>
-          <td>${statusBadge(r.Status)}</td>
-          <td>${escapeHtml(r.Timestamp)}</td>
-        </tr>
-      `).join('') : `<tr><td colspan="5" class="empty">No records</td></tr>`}
-    </tbody>
-  `;
-
-  document.getElementById('pagination').innerHTML = `
-    <span>${rows.length} records</span>
-    <button class="secondary-button" data-page="${state.page - 1}" ${state.page === 1 ? 'disabled' : ''}>Prev</button>
-    <span>${state.page} / ${maxPage}</span>
-    <button class="secondary-button" data-page="${state.page + 1}" ${state.page === maxPage ? 'disabled' : ''}>Next</button>
-  `;
-}
-
-/* -----------------------------
-   FILTERS
-------------------------------*/
-function filteredRows() {
-  const q = getValue('searchFilter').toLowerCase();
-  const shift = getValue('shiftFilter');
-  const status = getValue('statusFilter');
-  const from = getValue('fromFilter');
-  const to = getValue('toFilter');
-
-  return (state.attendance || [])
-    .filter(r => {
-      if (q && !Object.values(r || {}).join(' ').toLowerCase().includes(q)) return false;
-      if (shift && r.ShiftWorked !== shift) return false;
-      if (status && r.Status !== status) return false;
-      if (from && r.AttendanceDate < from) return false;
-      if (to && r.AttendanceDate > to) return false;
-      return true;
-    })
-    .sort((a, b) => String(b.AttendanceDate).localeCompare(String(a.AttendanceDate)));
-}
-
-function clearFilters() {
-  ['searchFilter','shiftFilter','statusFilter','fromFilter','toFilter']
-    .forEach(id => document.getElementById(id).value = '');
-
-  state.page = 1;
-  renderHistory();
-}
-
-/* -----------------------------
-   EXPORT
-------------------------------*/
-function exportRows(type) {
-  const rows = filteredRows();
-  if (!rows.length) return toast("No data");
-
-  const headers = Object.keys(rows[0]);
-
-  const csv = [headers.join(',')]
-    .concat(rows.map(r => headers.map(h => csvCell(r[h])).join(',')))
-    .join('\n');
-
-  downloadFile(csv, "attendance.csv", "text/csv");
-}
-
-/* -----------------------------
-   LOGOUT
-------------------------------*/
-async function logout() {
-  try {
-    await supabase.auth.signOut();
-  } catch {}
-
-  localStorage.removeItem(STORAGE_KEY);
-  window.location.href = "Login.html";
-}
-
-/* -----------------------------
-   SESSION
-------------------------------*/
-function touchSession() {
-  if (!state.session) return;
-
-  state.session.lastActivity = Date.now();
-  state.session.expiresAt =
-    Date.now() + APP_CONFIG.sessionTimeoutMinutes * 60000;
-
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.session));
-}
-
-function checkSessionTimeout() {
-  const session = getSession();
-
-  if (!session || Date.now() > session.expiresAt) {
-    localStorage.removeItem(STORAGE_KEY);
-    redirectToLogin();
-  }
-}
-
-function getSession() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY));
-  } catch {
-    return null;
-  }
-}
-
-/* -----------------------------
-   HELPERS
-------------------------------*/
-function getValue(id) {
-  return document.getElementById(id).value.trim();
-}
-
-function uniqueValues(arr) {
-  return [...new Set(arr.filter(Boolean))].sort();
-}
-
-function csvCell(v) {
-  const s = String(v ?? '');
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
-}
-
-function downloadFile(content, name, type) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-
-  URL.revokeObjectURL(url);
-}
-
-function escapeHtml(v) {
-  return String(v ?? '')
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;')
-    .replace(/'/g,'&#039;');
-}
-
-function toast(msg) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 3000);
-}
-
-function showLoading(show) {
-  document.getElementById('loading').classList.toggle('show', show);
-}
-
-function statusBadge(s) {
-  const v = (s || 'Pending').toLowerCase();
-  return `<span class="status ${v}">${escapeHtml(s)}</span>`;
-}
-
-function setToday() {
-  const d = new Date();
-  document.getElementById('attendanceDate').value =
-    `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-
-function redirectToLogin() {
-  window.location.href = "Login.html";
-}
 </script>
