@@ -529,67 +529,124 @@
       </section>
     </main>
   </div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <script>
   // =========================
   // 1. INIT SUPABASE
   // =========================
-  const SUPABASE_URL = "YOUR_SUPABASE_URL";
-  const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+ const SUPABASE_URL = "https://nwdzkfssqprsoifnpesh.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53ZHprZnNzcXByc29pZm5wZXNoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIwMTc1NzcsImV4cCI6MjA5NzU5MzU3N30.L1y9frTQASvQC0vLcRvaggpZxZl8zMfGvRSzYAzcohE";
 
-  const client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   // =========================
-  // 2. LOGIN FUNCTION
+  // 2. GET LOGGED IN USER
   // =========================
-  async function loginUser(event) {
-    event.preventDefault();
+  const user = JSON.parse(localStorage.getItem("user"));
 
-    const employeeId = document.getElementById("employeeId").value;
-    const password = document.getElementById("password").value;
+  if (!user) {
+    window.location.href = "Login.html";
+  }
 
-    // Fetch user from your custom employees table
-    const { data, error } = await client
-      .from("employees")
+  // =========================
+  // 3. LOAD PROFILE IMMEDIATELY (FIX FOR "LOADING PROFILE")
+  // =========================
+  async function loadProfile() {
+    try {
+      document.getElementById("empName").innerText = user.name || user.employee_id;
+      document.getElementById("empId").innerText = user.employee_id;
+
+      // OPTIONAL: if you have employee table refresh
+      const { data, error } = await supabaseClient
+        .from("employees")
+        .select("*")
+        .eq("employee_id", user.employee_id)
+        .single();
+
+      if (!error && data) {
+        document.getElementById("empName").innerText = data.name;
+      }
+
+      document.getElementById("profileStatus").innerText = "Active";
+
+    } catch (err) {
+      console.log("Profile load error:", err);
+    }
+  }
+
+  // =========================
+  // 4. LOAD ATTENDANCE HISTORY
+  // =========================
+  async function loadAttendance() {
+    const { data, error } = await supabaseClient
+      .from("attendance")
       .select("*")
-      .eq("employee_id", employeeId)
-      .eq("password", password)
-      .single();
+      .eq("employee_id", user.employee_id)
+      .order("created_at", { ascending: false });
 
-    if (error || !data) {
-      alert("Invalid credentials");
+    const table = document.getElementById("attendanceTable");
+
+    if (error) {
+      console.log(error);
+      table.innerHTML = "<tr><td colspan='4'>Error loading data</td></tr>";
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      table.innerHTML = "<tr><td colspan='4'>No records found</td></tr>";
+      return;
+    }
+
+    table.innerHTML = data.map(row => `
+      <tr>
+        <td>${row.date}</td>
+        <td>${row.shift}</td>
+        <td>${row.status}</td>
+        <td>${row.comments || ""}</td>
+      </tr>
+    `).join("");
+  }
+
+  // =========================
+  // 5. SUBMIT ATTENDANCE
+  // =========================
+  async function submitAttendance() {
+    const date = document.getElementById("date").value;
+    const shift = document.getElementById("shift").value;
+    const comments = document.getElementById("comments").value;
+
+    if (!date || !shift) {
+      alert("Please fill required fields");
+      return;
+    }
+
+    const { error } = await supabaseClient.from("attendance").insert([
+      {
+        employee_id: user.employee_id,
+        date,
+        shift,
+        comments,
+        status: "Pending"
+      }
+    ]);
+
+    if (error) {
+      alert("Error submitting attendance");
       console.log(error);
       return;
     }
 
-    // =========================
-    // 3. ROLE BASED ROUTING
-    // =========================
-    if (data.role === "admin") {
-      localStorage.setItem("user", JSON.stringify(data));
-      window.location.href = "admin.html";
-    } 
-    else if (data.role === "employee") {
-      localStorage.setItem("user", JSON.stringify(data));
-      window.location.href = "employee.html";
-    } 
-    else {
-      alert("Unknown role");
-    }
+    alert("Submitted successfully");
+    loadAttendance();
   }
 
-  // Attach login to form if needed
-  document.getElementById("loginForm").addEventListener("submit", loginUser);
-
   // =========================
-  // 4. AUTO SESSION CHECK (optional but recommended)
+  // 6. INIT PAGE
   // =========================
-  window.onload = async function () {
-    const user = JSON.parse(localStorage.getItem("user"));
-
-    if (user) {
-      console.log("Already logged in:", user.employee_id);
-    }
+  window.onload = function () {
+    loadProfile();
+    loadAttendance();
   };
 </script>
